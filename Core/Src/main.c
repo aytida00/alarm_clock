@@ -82,15 +82,28 @@ uint8_t double_quick_switch_counter = 0, single_quick_switch_counter = 0;
 uint32_t single_switch_timer = 0;
 bool enable_single_switch_timer = false;
 
+
+int8_t current_function = 0;
+int8_t current_layer = 0;
+int8_t prev_layer = 0; // just for displaying alarm function(that is 0th function) when entered into layer1 from 0th layer
+
+// layer: 1
+int prev_joy_command = JOY_IDLE;
+
+// layer: 2 --> TIMER
+int8_t current_timer_option = 0;
+bool stop_beep_beep_FLAG = false;
+
 // For auto display off
 bool auto_display_off_FLAG = false;
 uint32_t auto_display_off_timer = 0;
+bool auto_display_off_ENABLE = true;  // in layer 1 and layer 2 we don't want screen to go off. This is where this should be false to stop auto display off feature
 
 
 bool start_timer_FLAG = false;
 
 // timer sound parameters
-bool start_sound_FLAG = false;  // becomes high whenever alarm or timer finishes
+bool start_beep_beep_FLAG = false;  // becomes high whenever alarm or timer finishes
 uint8_t time_gap_counter = 0; // if self%3 = 0 then 100ms, = 1 then 100ms, =2 then 1 second
 uint16_t timer_sound_interval = 0;
 uint32_t timer_sound_prev_time = 0;
@@ -99,7 +112,7 @@ bool flip_on_off_sound_FLAG = true;
 // for small beep
 bool small_beep_FLAG = false;
 
-uint16_t timer_START_time = 0;
+int16_t timer_seconds = 0;
 uint32_t timer_PREV_time = 0, timer_FUTURE_time = 0;
 uint8_t display_timer_data[4];
 // ##################################################################################
@@ -120,6 +133,9 @@ void display_stages(void);
 void start_timer(uint8_t otpion);
 void timer_beep_beep(void);
 void detect_switch_cases_v2(void);
+void update_layer(void);
+void show_function_selector(void);
+void timer_selector(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -201,10 +217,34 @@ int main(void)
 
 	  detect_switch_cases_v2();
 
-	  if (downtime_seconds - auto_display_off_timer >= 10 && (!auto_display_off_FLAG)){
+	  update_layer();
+
+	  if (downtime_seconds - auto_display_off_timer >= 10 && (!auto_display_off_FLAG && auto_display_off_ENABLE)){
 		  auto_display_off_FLAG = true;
 		  uint8_t nothing_digits[4] = {0, 0, 0, 0};
 		  TM1637_WriteData(0xc0, nothing_digits, 4);
+	  }
+
+	  if (current_layer == 0) {
+		  if (!auto_display_off_ENABLE) auto_display_off_ENABLE = true;
+		  display_current_time();
+	  }
+
+	  else if (current_layer == 1) {
+		  if (auto_display_off_ENABLE) auto_display_off_ENABLE = false;
+		  show_function_selector();
+	  }
+
+	  else if (current_layer == 2) {
+		  // timer
+		  if (current_function == 1){
+			  timer_selector();
+		  }
+	  }
+
+	  else if (current_layer == 10){
+		  start_timer(current_timer_option);
+		  if (start_beep_beep_FLAG) timer_beep_beep();
 	  }
 
 
@@ -213,6 +253,7 @@ int main(void)
 	  single_quick_switch_counter = 0;
 	  double_quick_switch_counter = 0;
 	  long_switch_pressed = 0;
+	  prev_layer = current_layer;
 
 
     /* USER CODE END WHILE */
@@ -577,6 +618,119 @@ void detect_switch_cases_v2(void) {
 }
 
 
+void update_layer(void){
+//	current_layer - a global_var
+	// from 0th layer to 1st layer
+	if (current_layer == 0 && long_switch_pressed){
+		current_function = 0; // that is alarm function
+		// here I would need long switch press for forward pass
+		current_layer = 1;  // entering to layer where functions can be selected
+	}
+	else if (current_layer == 1 && single_quick_switch_counter){
+		current_layer = 2;  // Entering to particular function
+	}
+	else if (double_quick_switch_counter && (current_layer <= 2)){
+		current_layer -= 1;
+	}
+	// timer option selected
+	else if (current_layer == 2 && single_quick_switch_counter){
+		if (current_function == 1){
+			current_layer = 10; // specific for timer
+			auto_display_off_ENABLE = true;
+		}
+	}
+	// timer is finished, stop beeep-beep
+	else if (current_layer == 10 && single_quick_switch_counter && start_beep_beep_FLAG){
+		current_layer = 0;
+		stop_beep_beep_FLAG = true;
+		auto_display_off_ENABLE = true;
+	}
+
+	if (current_layer < 0) current_layer = 0;
+}
+
+
+void show_function_selector(void){
+	// display functions according to current_function
+	// display 0th function when entered into layer1
+	if (current_layer != prev_layer){
+		char display_data[4] = {'A', 'L', 0, 0};
+		display_all_chars(display_data);
+		current_function = 0;
+	}
+	// update screen only when joystick command change from previous global stored command
+	int joy_command = get_joystick_commands();
+	if (joy_command != prev_joy_command && (joy_command != JOY_IDLE)){
+		char display_data[4] = {0, 0, 0, 0};
+		if (joy_command == JOY_U && (current_function < 3)) current_function += 1;
+		else if (joy_command == JOY_D && (current_function > 0)) current_function -= 1;
+
+		switch (current_function){
+				case 0:
+					display_data[0] = 'A';
+					display_data[1] = 'L';
+					break;
+				case 1:
+					display_data[0] = 't';
+					display_data[1] = 'i';
+					break;
+				case 2:
+					display_data[0] = 'S';
+					display_data[1] = 't';
+					display_data[2] = 'C';
+					display_data[3] = 'L';
+					break;
+				case 3:
+					display_data[0] = 'C';
+					display_data[1] = 'L';
+					break;
+				}
+
+				display_all_chars(display_data);
+	}
+	prev_joy_command = joy_command;
+}
+
+
+void timer_selector(void){
+	if (current_layer != prev_layer){
+		uint8_t display_data[4] = {0, 0, 1, 0};
+		display_all_digits(display_data);
+		current_timer_option = 0;
+	}
+	// update screen only when joystick command change from previous global stored command
+	int joy_command = get_joystick_commands();
+	if (joy_command != prev_joy_command && (joy_command != JOY_IDLE)){
+		uint8_t display_data[4] = {0, 0, 0, 0};
+		if (joy_command == JOY_U && (current_timer_option < 3)) current_timer_option += 1;
+		else if (joy_command == JOY_D && (current_timer_option > 0)) current_timer_option -= 1;
+
+		switch (current_timer_option){
+				case 0:                         // 10 minutes
+					display_data[2] = 1;
+					display_data[3] = 0;
+					break;
+				case 1:                        // 25 minutes
+					display_data[2] = 2;
+					display_data[3] = 5;
+					break;
+				case 2:                        // 45 minutes
+					display_data[2] = 4;
+					display_data[3] = 5;
+					break;
+				case 3:                        // 60 minutes
+					display_data[0] = 0;
+					display_data[1] = 1;
+					break;
+				}
+
+				display_all_digits(display_data);
+	}
+	prev_joy_command = joy_command;
+
+}
+
+
 
 void display_current_time(){
 	uint8_t current_hour = (uint8_t)(today_time_in_sec / 3600);
@@ -643,20 +797,20 @@ void start_timer(uint8_t option){
 	if (!start_timer_FLAG){
 		switch (option){
 		case 0:
-			timer_START_time = 10*1;  // 10 minutes
+			timer_seconds = 10*1;  // 10 minutes
 			break;
 		case 1:
-			timer_START_time = 60*25; // 25 minutes
+			timer_seconds = 1*25; // 25 minutes
 			break;
 		case 3:
-			timer_START_time = 60*45; // 45 minutes
+			timer_seconds = 1*45; // 45 minutes
 			break;
 		case 4:
-			timer_START_time = 60*60; // 60 minutes
+			timer_seconds = 1*60; // 60 minutes
 			break;
 		}
 		start_timer_FLAG = true;
-		timer_FUTURE_time = today_time_in_sec + timer_START_time;
+		timer_FUTURE_time = today_time_in_sec + timer_seconds;
 	}
 	// start counting timer until 00:00
 	else{
@@ -665,9 +819,9 @@ void start_timer(uint8_t option){
 			// show the time
 			if (today_time_in_sec - timer_PREV_time >= 1){
 				// calculate the time and show it
-				timer_START_time -= 1;
-				uint8_t current_minute = (uint8_t)(timer_START_time / 60);
-				uint8_t current_seconds = (uint8_t)(timer_START_time - current_minute*60);
+				timer_seconds -= 1;
+				uint8_t current_minute = (uint8_t)(timer_seconds / 60);
+				uint8_t current_seconds = (uint8_t)(timer_seconds - current_minute*60);
 				display_timer_data[0] = (current_minute / 10);
 				display_timer_data[1] = current_minute % 10;
 				display_timer_data[2] = (current_seconds / 10);
@@ -682,11 +836,9 @@ void start_timer(uint8_t option){
 		}
 		// timer over. Make a beep-beep(timer_sound).
 		else{
-			start_sound_FLAG = true;  // play timer_beep_beep()
+			start_beep_beep_FLAG = true;  // play timer_beep_beep()
 			timer_sound_prev_time = HAL_GetTick();
 			start_timer_FLAG = false;
-			IS_SUBSTAGE_ENTERED = false;
-			display_current_time_FLAG = true;
 		}
 	}
 }
@@ -694,12 +846,10 @@ void start_timer(uint8_t option){
 
 void timer_beep_beep(void){
 	// check for user interrupt to stop sound
-	if (single_quick_switch_counter){
-		single_quick_switch_counter = 0;
-		start_sound_FLAG = false;
+	if (stop_beep_beep_FLAG){
+		stop_beep_beep_FLAG = false;
+		start_beep_beep_FLAG = false;
 		speaker_stop(&htim2);
-		IS_SUBSTAGE_ENTERED = false;
-		display_current_time_FLAG = true;
 		return;
 	}
 
@@ -728,8 +878,15 @@ void timer_beep_beep(void){
 		flip_on_off_sound_FLAG = false;
 		if (time_gap_counter % 2 == 0){
 			speaker_play(&htim2, 350);
+			char mychar[4] = {'i', 'i', 'i', 'i'};
+			display_all_chars(mychar);
 		}
-		else speaker_stop(&htim2);
+		else {
+			speaker_stop(&htim2);
+			char mychar[4] = {0, 0, 0, 0};
+			display_all_chars(mychar);
+		}
+
 	}
 
 }
@@ -737,33 +894,33 @@ void timer_beep_beep(void){
 
 
 
-void display_stages(void){
-	if (current_stage != prev_stage){
-		char display_data[4] = {0, 0, 0, 0};
-		switch (current_stage){
-		case 0:
-			display_data[0] = 'C';
-			display_data[1] = 'L';
-			break;
-		case 1:
-			display_data[0] = 't';
-			display_data[1] = 'i';
-			break;
-		case 2:
-			display_data[0] = 'S';
-			display_data[1] = 't';
-			display_data[2] = 'C';
-			display_data[3] = 'L';
-			break;
-		case 3:
-			display_data[0] = 'A';
-			display_data[1] = 'L';
-			break;
-		}
-
-		display_all_chars(display_data);
-	}
-}
+//void display_stages(void){
+//	if (current_stage != prev_stage){
+//		char display_data[4] = {0, 0, 0, 0};
+//		switch (current_stage){
+//		case 0:
+//			display_data[0] = 'C';
+//			display_data[1] = 'L';
+//			break;
+//		case 1:
+//			display_data[0] = 't';
+//			display_data[1] = 'i';
+//			break;
+//		case 2:
+//			display_data[0] = 'S';
+//			display_data[1] = 't';
+//			display_data[2] = 'C';
+//			display_data[3] = 'L';
+//			break;
+//		case 3:
+//			display_data[0] = 'A';
+//			display_data[1] = 'L';
+//			break;
+//		}
+//
+//		display_all_chars(display_data);
+//	}
+//}
 
 
 
