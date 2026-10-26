@@ -1,0 +1,15 @@
+# Build output directories
+Debug/
+Release/
+
+# IDE specific local settings
+.settings/
+*.launch
+
+# Object files, binaries, and compiler outputs
+*.o
+*.elf
+*.bin
+*.hex
+*.map
+*.su
