@@ -55,10 +55,9 @@ TIM_HandleTypeDef htim2;
 /* USER CODE BEGIN PV */
 struct t_ start_t;
 
-//  uint32_t uptime_seconds = HAL_GetTick() / 1000;
+// for current time
 uint32_t downtime_seconds;
 uint32_t downtime_seconds_prev = 0;
-bool display_current_time_FLAG = true;
 uint32_t today_time_in_sec = 0;
 uint8_t time_display_data[4];
 
@@ -74,16 +73,12 @@ bool joystick_at_idle = true;
 uint32_t value_adc[2];
 
 
-// joystick utility
+// For switch cases
 volatile bool switch_pressed = false;
 bool prev_switch_status = false;
-uint32_t switch_counter_start;
 bool long_switch_pressed = false;
-bool quick_switch_pressed = false;
-uint32_t prev_HIGH_TICK = 0, prev_LOW_TICK = 0, HIGH_TICK = 0, LOW_TICK = 0;
-uint8_t double_quick_switch_counter = 0, double_quick_switch_counter_HELPER = 0, single_quick_switch_counter = 0, single_quick_switch_counter_HELPER = 0;
-bool double_switch_counter_FLAG = false;
-bool LONG_SWITCH_BEEPED = false;
+uint32_t HIGH_TICK = 0, LOW_TICK = 0;
+uint8_t double_quick_switch_counter = 0, single_quick_switch_counter = 0;
 uint32_t single_switch_timer = 0;
 bool enable_single_switch_timer = false;
 
@@ -91,20 +86,6 @@ bool enable_single_switch_timer = false;
 bool auto_display_off_FLAG = false;
 uint32_t auto_display_off_timer = 0;
 
-
-
-// ############### defining stages and their substages ##############################
-// enable them only when display_current_time_FLAG is false
-/*
- * Prime_stages:
- * 	0 - clock [CL]
- * 	1 - Timer [ti]
- *  2 - Stop Watch [St Wa]
- * 	3 - Alarm [AL]
- */
-int8_t current_stage = 0;  // clock stage
-int8_t prev_stage = 0; // stores current stage at end of main loop
-bool IS_SUBSTAGE_ENTERED = false;  // when single_quick_switch is pressed at present stage
 
 bool start_timer_FLAG = false;
 
@@ -117,10 +98,8 @@ bool flip_on_off_sound_FLAG = true;
 
 // for small beep
 bool small_beep_FLAG = false;
-uint32_t small_beep_COUNTER = 0;
-uint32_t small_beep_tick = 0; // will be set to current haltick whenever need to beeped
 
-uint16_t timer_START_time = 0, timer_CURRENT_time = 0;
+uint16_t timer_START_time = 0;
 uint32_t timer_PREV_time = 0, timer_FUTURE_time = 0;
 uint8_t display_timer_data[4];
 // ##################################################################################
@@ -135,19 +114,12 @@ static void MX_ADC1_Init(void);
 static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 
-void detect_long_switchpress();
 void display_current_time();
-void enable_stages(void);
-void handle_stages(void);
 int get_joystick_commands(void);
 void display_stages(void);
-void detect_switch_cases(void);
-void handle_substage(void);
 void start_timer(uint8_t otpion);
 void timer_beep_beep(void);
-void small_beep(void);
 void detect_switch_cases_v2(void);
-void select_timer_option(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -214,9 +186,6 @@ int main(void)
   HAL_ADC_Start_DMA(&hadc1, (uint32_t*)value_adc, 2);
 
 
-//  speaker_play(&htim2, 400);
-//  HAL_Delay(1000);
-//  speaker_stop(&htim2);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -238,44 +207,13 @@ int main(void)
 		  TM1637_WriteData(0xc0, nothing_digits, 4);
 	  }
 
-	  enable_stages();
 
-	  if (start_sound_FLAG){
-		  timer_beep_beep();
-	  }
-	  else{
-		  if (display_current_time_FLAG){
-			  display_current_time();
-		  }
-
-		  // display prime stages
-		  if (!display_current_time_FLAG && !IS_SUBSTAGE_ENTERED){
-			  handle_stages();
-			  display_stages();
-		  }
-
-		  // display content of particular sub-stage
-		  if (!display_current_time_FLAG && IS_SUBSTAGE_ENTERED){
-			  handle_substage();
-		  }
-
-		  select_timer_option(void);
-	  }
-
-
-
-
-
-
-
-//	  small_beep();
 
 	  // clear all switch cases
 	  single_quick_switch_counter = 0;
 	  double_quick_switch_counter = 0;
 	  long_switch_pressed = 0;
 
-	  prev_stage = current_stage;
 
     /* USER CODE END WHILE */
 
@@ -556,104 +494,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 	}
 }
 
-void detect_long_switchpress(){
-	if (switch_pressed){
-		if (!prev_switch_status){
-			switch_counter_start = HAL_GetTick();
-		}
-		if (HAL_GetTick() - switch_counter_start > 1500){
-			long_switch_pressed = true;
-			quick_switch_pressed = false;
-		}
-		if (HAL_GetTick() - switch_counter_start <= 1500){
-				quick_switch_pressed = true;  // set this to false at main loop
-			}
-	}
-	else{
-		long_switch_pressed = false;
-	}
-
-
-
-	prev_switch_status = switch_pressed;
-}
-
-
-// Whether it is single_quick or double_quick or long_pressed.
-void detect_switch_cases(void){
-	if(switch_pressed && !prev_switch_status) HIGH_TICK = HAL_GetTick();  // when 0 to 1
-	if(!switch_pressed && prev_switch_status) LOW_TICK = HAL_GetTick();  // when 1 to 0
-
-	// FOR INDICATING WHEN LONG SWITCH PRESSED BUT YET NOT LOWED. So user after hearing low would put switch to low which will make it LONG_SWITCH
-	if ((HAL_GetTick() - HIGH_TICK >= 1500) && !LONG_SWITCH_BEEPED){
-		LONG_SWITCH_BEEPED = true;
-//		speaker_play(&htim2, 500);
-	}
-
-	// detect PULSE which are not long pressed
-	if ((LOW_TICK - HIGH_TICK > 0) && (prev_LOW_TICK != LOW_TICK)){
-		if (LOW_TICK - HIGH_TICK < 1500){
-			// As you got pulse then compare it with previous pulse
-			if (HIGH_TICK - prev_LOW_TICK < 200){
-				double_quick_switch_counter_HELPER = 1;
-				double_switch_counter_FLAG = true;
-			}
-			else {
-				single_quick_switch_counter_HELPER = 1;
-			}
-//			prev_HIGH_TICK = HIGH_TICK; // I don't need it
-//			prev_LOW_TICK = LOW_TICK;
-		}
-		// LONG PRESSED
-		else {
-			LONG_SWITCH_BEEPED = false;  // To reload beep function
-			long_switch_pressed = true;
-//			speaker_stop(&htim2);
-		}
-
-	}
-	prev_LOW_TICK = LOW_TICK;
-
-//	if (HAL_GetTick() - LOW_TICK > 301){
-//		if (single_quick_switch_counter_HELPER){
-//			if (double_quick_switch_counter){
-//				single_quick_switch_counter = 0;
-//				single_quick_switch_counter_HELPER = 0;
-//			}
-//			else{
-//				single_quick_switch_counter = 1;
-//				single_quick_switch_counter_HELPER = 0;
-//			}
-//		}
-//	}
-
-	if (single_quick_switch_counter_HELPER){
-		// set a timer of 300 second
-		single_switch_timer = HAL_GetTick();
-		single_quick_switch_counter_HELPER = 0;
-		enable_single_switch_timer = true;
-	}
-	if (double_quick_switch_counter_HELPER && double_switch_counter_FLAG){
-		double_quick_switch_counter += 1;
-		double_switch_counter_FLAG = false;
-		double_quick_switch_counter_HELPER = 0;
-		enable_single_switch_timer = 0;
-	}
-
-	if (enable_single_switch_timer){
-		if ((HAL_GetTick() - single_switch_timer > 300) && !double_quick_switch_counter_HELPER){
-			single_quick_switch_counter += 1;
-			enable_single_switch_timer = false;
-			double_quick_switch_counter_HELPER = 0;
-		}
-	}
-
-
-
-	prev_switch_status = switch_pressed;
-
-
-}
 
 
 void detect_switch_cases_v2(void) {
@@ -799,61 +639,6 @@ int get_joystick_commands(void){
 
 
 
-void enable_stages(void){
-	if (display_current_time_FLAG){
-		if (long_switch_pressed){
-			display_current_time_FLAG = false;
-//			quick_switch_pressed = false;
-//			single_quick_switch_counter = 0;
-			long_switch_pressed = false;
-		}
-
-	}
-	if (double_quick_switch_counter){
-		display_current_time_FLAG = true;
-		double_quick_switch_counter = 0;
-	}
-
-
-}
-
-void handle_stages(void){
-
-		int joy_command = get_joystick_commands();
-
-		if (joy_command == JOY_U){
-			current_stage += 1;
-			if (current_stage > 3) current_stage = 3;
-		}
-		if (joy_command == JOY_D){
-			current_stage -= 1;
-			if (current_stage < 0) current_stage = 0;
-		}
-
-		// detect single_quick_switch
-		if (single_quick_switch_counter){
-			single_quick_switch_counter = 0;
-			IS_SUBSTAGE_ENTERED = true;
-		}
-
-}
-
-
-
-void handle_substage(void){
-	// timer
-	if (current_stage == 1){
-		start_timer(0);
-//		select_timer_option_FLAG = true;  // argument for the selct_timer_option()
-	}
-}
-
-
-void select_timer_option(void){
-	// current_timer_option_at_display.
-
-}
-
 void start_timer(uint8_t option){
 	if (!start_timer_FLAG){
 		switch (option){
@@ -949,22 +734,6 @@ void timer_beep_beep(void){
 
 }
 
-// put this in main loop. set its FLAG to true whenever you want to beep
-void small_beep(void){
-	if (small_beep_FLAG){
-		if (small_beep_COUNTER == 0) {
-			small_beep_tick = HAL_GetTick();
-			speaker_play(&htim2, 350);
-		}
-		small_beep_COUNTER += 1;
-		if (HAL_GetTick() - small_beep_tick > 300){
-//			small_beep_COUNTER = 0;
-			small_beep_FLAG = false;  // reset the function
-			speaker_stop(&htim2);
-		}
-	}
-
-}
 
 
 
