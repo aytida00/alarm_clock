@@ -112,7 +112,7 @@ bool flip_on_off_sound_FLAG = true;
 // for small beep
 bool small_beep_FLAG = false;
 
-int16_t timer_seconds = 0;
+uint16_t timer_seconds = 0;
 uint32_t timer_PREV_time = 0, timer_FUTURE_time = 0;
 uint8_t display_timer_data[4];
 // ##################################################################################
@@ -794,6 +794,7 @@ int get_joystick_commands(void){
 
 
 void start_timer(uint8_t option){
+	if (!start_beep_beep_FLAG){
 	if (!start_timer_FLAG){
 		switch (option){
 		case 0:
@@ -802,20 +803,23 @@ void start_timer(uint8_t option){
 		case 1:
 			timer_seconds = 1*25; // 25 minutes
 			break;
-		case 3:
+		case 2:
 			timer_seconds = 1*45; // 45 minutes
 			break;
-		case 4:
+		case 3:
 			timer_seconds = 1*60; // 60 minutes
 			break;
 		}
 		start_timer_FLAG = true;
 		timer_FUTURE_time = today_time_in_sec + timer_seconds;
+
+		// FIX 2: Initialize PREV_time so the first second doesn't tick prematurely
+		timer_PREV_time = today_time_in_sec;
 	}
 	// start counting timer until 00:00
 	else{
 //		timer_CURRENT_time = HAL_GetTick()/1000;
-		if (timer_FUTURE_time - today_time_in_sec > 0){
+		if (today_time_in_sec < timer_FUTURE_time){
 			// show the time
 			if (today_time_in_sec - timer_PREV_time >= 1){
 				// calculate the time and show it
@@ -840,6 +844,7 @@ void start_timer(uint8_t option){
 			timer_sound_prev_time = HAL_GetTick();
 			start_timer_FLAG = false;
 		}
+	}
 	}
 }
 
