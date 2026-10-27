@@ -798,16 +798,16 @@ void start_timer(uint8_t option){
 	if (!start_timer_FLAG){
 		switch (option){
 		case 0:
-			timer_seconds = 10*1;  // 10 minutes
+			timer_seconds = 10*60;  // 10 minutes
 			break;
 		case 1:
-			timer_seconds = 1*25; // 25 minutes
+			timer_seconds = 60*25; // 25 minutes
 			break;
 		case 2:
-			timer_seconds = 1*45; // 45 minutes
+			timer_seconds = 60*45; // 45 minutes
 			break;
 		case 3:
-			timer_seconds = 1*60; // 60 minutes
+			timer_seconds = 60*60; // 60 minutes
 			break;
 		}
 		start_timer_FLAG = true;
