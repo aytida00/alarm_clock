@@ -187,8 +187,12 @@ int main(void)
   uint8_t data[4] = {0b01110111, 0b01111100, 0b00111001, 0b01011110};  // 1, 2, 3, 4
   TM1637_WriteData(0xC0, data, 4);
 
-//  set_rtc_to_current(&hi2c1, 0, 14, 0, 4, 1, 10, 26);
+//  set_rtc_to_current(&hi2c1, 0, 34, 21, 2, 27, 10, 26);
 //  HAL_Delay(1000);
+  // to enable rtc module
+//  uint8_t buff[1] = {0};
+//   HAL_I2C_Mem_Write(&hi2c1, TIMER_ADDR, REG_TIME, I2C_MEMADD_SIZE_8BIT, buff, 1, 100);
+
 
   start_t = get_current_time(&hi2c1);
   uint8_t start_minute = start_t.minute;
@@ -638,11 +642,20 @@ void update_layer(void){
 			current_layer = 10; // specific for timer
 			auto_display_off_ENABLE = true;
 		}
+		else if (current_function == 2){
+			current_layer = 15;  // specific for stop watch
+			auto_display_off_ENABLE = false;
+		}
 	}
 	// timer is finished, stop beeep-beep
 	else if (current_layer == 10 && single_quick_switch_counter && start_beep_beep_FLAG){
 		current_layer = 0;
 		stop_beep_beep_FLAG = true;
+		auto_display_off_ENABLE = true;
+	}
+	// cancel the timer with long_switch press
+	else if (current_layer == 10 && long_switch_pressed && !start_beep_beep_FLAG){
+		current_layer = 0;
 		auto_display_off_ENABLE = true;
 	}
 
@@ -738,8 +751,8 @@ void display_current_time(){
 	uint8_t current_seconds = (uint8_t)(today_time_in_sec - current_hour*3600 - current_minute*60);
 
 
-	time_display_data[0] = (current_minute / 10);
-	time_display_data[1] = current_minute % 10;
+	time_display_data[0] = (current_hour / 10);
+	time_display_data[1] = current_hour % 10;
 	time_display_data[2] = (current_seconds / 10);
 	time_display_data[3] = current_seconds % 10;
 

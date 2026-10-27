@@ -39,9 +39,9 @@ void set_rtc_to_current(I2C_HandleTypeDef *hi2c, uint8_t sec, uint8_t minute, ui
 
 struct t_ get_current_time(I2C_HandleTypeDef *hi2c){
 
-	uint8_t buff[3];
+	uint8_t buff[5];
 
-	HAL_I2C_Mem_Read(hi2c, (TIMER_ADDR << 1), REG_TIME, I2C_MEMADD_SIZE_8BIT, buff, 3, 100);
+	HAL_I2C_Mem_Read(hi2c, (TIMER_ADDR << 1), REG_TIME, I2C_MEMADD_SIZE_8BIT, buff, 5, 100);
 
 
 	struct t_ time_;
