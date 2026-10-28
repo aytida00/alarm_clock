@@ -94,6 +94,14 @@ int prev_joy_command = JOY_IDLE;
 int8_t current_timer_option = 0;
 bool stop_beep_beep_FLAG = false;
 
+// layer: 2 --> STOP WATCH
+uint8_t stop_w_data[4] = {0, 0, 0, 0};
+uint32_t current_sw_tick = 0;
+uint32_t prev_sw_tick = 0;
+uint8_t stop_watch_layer = 0;
+bool stop_watch_zero_display_FLAG = true;
+uint32_t sw_counter = 0;
+
 // For auto display off
 bool auto_display_off_FLAG = false;
 uint32_t auto_display_off_timer = 0;
@@ -136,6 +144,7 @@ void detect_switch_cases_v2(void);
 void update_layer(void);
 void show_function_selector(void);
 void timer_selector(void);
+void handle_stop_watch(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -198,7 +207,7 @@ int main(void)
   uint8_t start_minute = start_t.minute;
   uint8_t start_hour = start_t.hour;
   uint8_t start_seconds = start_t.second;
-  uint32_t start_seconds_total = start_hour * 3600 + start_minute * 60 + start_seconds;
+  uint32_t start_time_in_sec = start_hour * 3600 + start_minute * 60 + start_seconds;
 
 
 
@@ -215,7 +224,7 @@ int main(void)
 	  // ################################################################################################
 	  // calculating today's current time in seconds
 	  downtime_seconds = HAL_GetTick()/1000;
-	  today_time_in_sec = start_seconds_total + downtime_seconds;
+	  today_time_in_sec = start_time_in_sec + downtime_seconds;
 	  // ################################################################################################
 
 
@@ -249,6 +258,10 @@ int main(void)
 	  else if (current_layer == 10){
 		  start_timer(current_timer_option);
 		  if (start_beep_beep_FLAG) timer_beep_beep();
+	  }
+
+	  else if (current_layer == 15){
+		  handle_stop_watch();
 	  }
 
 
@@ -631,21 +644,27 @@ void update_layer(void){
 		current_layer = 1;  // entering to layer where functions can be selected
 	}
 	else if (current_layer == 1 && single_quick_switch_counter){
+		single_quick_switch_counter = 0;
 		current_layer = 2;  // Entering to particular function
+		if (current_function == 2){
+			current_layer = 15;
+			auto_display_off_ENABLE = false;
+		}
 	}
 	else if (double_quick_switch_counter && (current_layer <= 2)){
 		current_layer -= 1;
 	}
 	// timer option selected
 	else if (current_layer == 2 && single_quick_switch_counter){
+		single_quick_switch_counter = 0;
 		if (current_function == 1){
 			current_layer = 10; // specific for timer
 			auto_display_off_ENABLE = true;
 		}
-		else if (current_function == 2){
-			current_layer = 15;  // specific for stop watch
-			auto_display_off_ENABLE = false;
-		}
+//		else if (current_function == 2){
+//			current_layer = 15;  // specific for stop watch
+//			auto_display_off_ENABLE = false;
+//		}
 	}
 	// timer is finished, stop beeep-beep
 	else if (current_layer == 10 && single_quick_switch_counter && start_beep_beep_FLAG){
@@ -658,8 +677,73 @@ void update_layer(void){
 		current_layer = 0;
 		auto_display_off_ENABLE = true;
 	}
+	// cancel the stop watch
+	else if(current_layer == 15 && double_quick_switch_counter){
+		if (stop_watch_layer == 0){
+			current_layer = 0;
+			auto_display_off_ENABLE = true;
+		}
+	}
 
 	if (current_layer < 0) current_layer = 0;
+}
+
+
+void handle_stop_watch(void){
+	current_sw_tick = HAL_GetTick();
+	if (stop_watch_layer == 0 && stop_watch_zero_display_FLAG){
+		// reset the buffer with zero
+		for (uint8_t i = 0; i < 4; i++){
+			stop_w_data[i] = 0;
+		}
+		display_all_digits(stop_w_data);
+		stop_watch_zero_display_FLAG = false;  // so that only one time 00:00 sets
+	}
+
+	// start counting
+	if (stop_watch_layer == 0 && single_quick_switch_counter){
+		single_quick_switch_counter = 0;
+		prev_sw_tick = current_sw_tick;
+		stop_watch_layer = 1;
+		sw_counter = 0;
+	}
+
+	// counting
+	else if(stop_watch_layer == 1){
+
+		if (single_quick_switch_counter){
+			single_quick_switch_counter = 0;
+			stop_watch_layer = 2;
+			return;
+		}
+
+		if (current_sw_tick - prev_sw_tick >= 1000){
+			// display the count
+			sw_counter += 1;
+			uint8_t sw_minutes = (uint8_t)(sw_counter / 60);
+			uint8_t sw_seconds = (uint8_t)(sw_counter - sw_minutes*60);
+			stop_w_data[0] = sw_minutes / 10;
+			stop_w_data[1] = sw_minutes % 10;
+			stop_w_data[2] = sw_seconds / 10;
+			stop_w_data[3] = sw_seconds % 10;
+			display_all_digits(stop_w_data);
+			prev_sw_tick = current_sw_tick;
+		}
+	}
+
+	// continue
+	else if(stop_watch_layer == 2 && single_quick_switch_counter){
+		single_quick_switch_counter = 0;
+		stop_watch_layer = 1;
+		return;
+	}
+
+	// reset
+	else if(stop_watch_layer == 2 && long_switch_pressed){
+		long_switch_pressed = 0;
+		stop_watch_layer = 0;
+		stop_watch_zero_display_FLAG = true;
+	}
 }
 
 

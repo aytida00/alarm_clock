@@ -31,6 +31,8 @@ void set_rtc_to_current(I2C_HandleTypeDef *hi2c, uint8_t sec, uint8_t minute, ui
 
 struct t_ get_current_time();
 
+uint32_t get_current_time_in_sec(I2C_HandleTypeDef *hi2c);
+
 
 #ifdef __cplusplus
 }

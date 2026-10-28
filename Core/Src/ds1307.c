@@ -51,3 +51,12 @@ struct t_ get_current_time(I2C_HandleTypeDef *hi2c){
 
 	return time_;
 }
+
+uint32_t get_current_time_in_sec(I2C_HandleTypeDef *hi2c){
+	struct t_ current_t;
+	current_t = get_current_time(hi2c);
+	  uint8_t current_minute = current_t.minute;
+	  uint8_t current_hour = current_t.hour;
+	  uint8_t current_seconds = current_t.second;
+	  return current_hour * 3600 + current_minute * 60 + current_seconds;
+}
