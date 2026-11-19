@@ -24,6 +24,7 @@
 
 #include "tm1637.h"
 #include "ds1307.h"
+#include "ds3231.h"
 #include "speaker.h"
 #include "stdbool.h"
 
@@ -53,11 +54,12 @@ I2C_HandleTypeDef hi2c1;
 TIM_HandleTypeDef htim2;
 
 /* USER CODE BEGIN PV */
-struct t_ start_t;
+struct t_1 start_t;
 
 // for current time
 uint32_t downtime_seconds;
 uint32_t downtime_seconds_prev = 0;
+uint32_t downtime_seconds_prev_HELPER = 0;
 uint32_t today_time_in_sec = 0;
 uint8_t time_display_data[4];
 
@@ -196,23 +198,30 @@ int main(void)
   uint8_t data[4] = {0b01110111, 0b01111100, 0b00111001, 0b01011110};  // 1, 2, 3, 4
   TM1637_WriteData(0xC0, data, 4);
 
-//  set_rtc_to_current(&hi2c1, 0, 34, 21, 2, 27, 10, 26);
+//  enable_oscillator_1(&hi2c1);
+//  HAL_Delay(1000);
+//
+//  set_rtc_to_current_1(&hi2c1, 0, 12, 14, 4, 19, 11, 26);
 //  HAL_Delay(1000);
   // to enable rtc module
 //  uint8_t buff[1] = {0};
 //   HAL_I2C_Mem_Write(&hi2c1, TIMER_ADDR, REG_TIME, I2C_MEMADD_SIZE_8BIT, buff, 1, 100);
 
 
-  start_t = get_current_time(&hi2c1);
+  start_t = get_current_time_1(&hi2c1);
   uint8_t start_minute = start_t.minute;
   uint8_t start_hour = start_t.hour;
   uint8_t start_seconds = start_t.second;
   uint32_t start_time_in_sec = start_hour * 3600 + start_minute * 60 + start_seconds;
+  today_time_in_sec = start_time_in_sec;
 
 
 
   HAL_ADCEx_Calibration_Start(&hadc1);
   HAL_ADC_Start_DMA(&hadc1, (uint32_t*)value_adc, 2);
+
+  // turn off built in led
+  HAL_GPIO_WritePin(MY_LED_GPIO_Port, MY_LED_Pin, 1);
 
 
   /* USER CODE END 2 */
@@ -224,9 +233,17 @@ int main(void)
 	  // ################################################################################################
 	  // calculating today's current time in seconds
 	  downtime_seconds = HAL_GetTick()/1000;
-	  today_time_in_sec = start_time_in_sec + downtime_seconds;
-	  // ################################################################################################
+//	  today_time_in_sec = start_time_in_sec + downtime_seconds;
 
+	  if (downtime_seconds - downtime_seconds_prev_HELPER >= 1){
+		  today_time_in_sec += 1;
+		  downtime_seconds_prev_HELPER = downtime_seconds;
+	  }
+
+	  if (today_time_in_sec > (86400)){
+		  today_time_in_sec = get_current_time_in_sec_1(&hi2c1);
+	  }
+	  // ################################################################################################
 
 	  detect_switch_cases_v2();
 
@@ -513,7 +530,7 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(MY_LED_GPIO_Port, MY_LED_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, TM_CLK_Pin|TM_DIO_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, TM_CLK_Pin|TM_DIO_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : MY_LED_Pin */
   GPIO_InitStruct.Pin = MY_LED_Pin;
@@ -532,8 +549,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pin = TM_CLK_Pin|TM_DIO_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
@@ -837,8 +854,8 @@ void display_current_time(){
 
 	time_display_data[0] = (current_hour / 10);
 	time_display_data[1] = current_hour % 10;
-	time_display_data[2] = (current_seconds / 10);
-	time_display_data[3] = current_seconds % 10;
+	time_display_data[2] = (current_minute / 10);
+	time_display_data[3] = current_minute % 10;
 
 
 	if (downtime_seconds - downtime_seconds_prev >= 1){

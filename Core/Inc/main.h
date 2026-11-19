@@ -66,10 +66,10 @@ void Error_Handler(void);
 #define SWITCH_Pin GPIO_PIN_7
 #define SWITCH_GPIO_Port GPIOA
 #define SWITCH_EXTI_IRQn EXTI9_5_IRQn
-#define TM_CLK_Pin GPIO_PIN_10
-#define TM_CLK_GPIO_Port GPIOB
-#define TM_DIO_Pin GPIO_PIN_11
-#define TM_DIO_GPIO_Port GPIOB
+#define TM_CLK_Pin GPIO_PIN_9
+#define TM_CLK_GPIO_Port GPIOA
+#define TM_DIO_Pin GPIO_PIN_10
+#define TM_DIO_GPIO_Port GPIOA
 
 /* USER CODE BEGIN Private defines */
 
