@@ -26,6 +26,7 @@
 #include "ds1307.h"
 #include "ds3231.h"
 #include "speaker.h"
+#include "at24cxx.h"
 #include "stdbool.h"
 
 /* USER CODE END Includes */
@@ -198,6 +199,24 @@ int main(void)
   uint8_t data[4] = {0b01110111, 0b01111100, 0b00111001, 0b01011110};  // 1, 2, 3, 4
   TM1637_WriteData(0xC0, data, 4);
 
+  HAL_Delay(2000);
+
+  // checking at24c256 read and write function.
+  uint16_t MEM_ADDR = 0x0000u;
+  uint8_t  wData[4] = {8,8,8,8};
+  uint8_t  rData[6];
+
+  if(at24_isConnected(&hi2c1)){
+//	  	at24_eraseChip(&hi2c1);
+//  		HAL_Delay(10);
+//  		at24_write(&hi2c1,MEM_ADDR,wData, 15, 100);
+//  		HAL_Delay(10);
+  		at24_read(&hi2c1,MEM_ADDR,rData, 15, 100);
+  		HAL_Delay(10);
+  	}
+
+  display_all_digits(rData);
+
 //  enable_oscillator_1(&hi2c1);
 //  HAL_Delay(1000);
 //
@@ -230,64 +249,64 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  // ################################################################################################
-	  // calculating today's current time in seconds
-	  downtime_seconds = HAL_GetTick()/1000;
-//	  today_time_in_sec = start_time_in_sec + downtime_seconds;
-
-	  if (downtime_seconds - downtime_seconds_prev_HELPER >= 1){
-		  today_time_in_sec += 1;
-		  downtime_seconds_prev_HELPER = downtime_seconds;
-	  }
-
-	  if (today_time_in_sec > (86400)){
-		  today_time_in_sec = get_current_time_in_sec_1(&hi2c1);
-	  }
-	  // ################################################################################################
-
-	  detect_switch_cases_v2();
-
-	  update_layer();
-
-	  if (downtime_seconds - auto_display_off_timer >= 10 && (!auto_display_off_FLAG && auto_display_off_ENABLE)){
-		  auto_display_off_FLAG = true;
-		  uint8_t nothing_digits[4] = {0, 0, 0, 0};
-		  TM1637_WriteData(0xc0, nothing_digits, 4);
-	  }
-
-	  if (current_layer == 0) {
-		  if (!auto_display_off_ENABLE) auto_display_off_ENABLE = true;
-		  display_current_time();
-	  }
-
-	  else if (current_layer == 1) {
-		  if (auto_display_off_ENABLE) auto_display_off_ENABLE = false;
-		  show_function_selector();
-	  }
-
-	  else if (current_layer == 2) {
-		  // timer
-		  if (current_function == 1){
-			  timer_selector();
-		  }
-	  }
-
-	  else if (current_layer == 10){
-		  start_timer(current_timer_option);
-		  if (start_beep_beep_FLAG) timer_beep_beep();
-	  }
-
-	  else if (current_layer == 15){
-		  handle_stop_watch();
-	  }
-
-
-
-	  // clear all switch cases
-	  single_quick_switch_counter = 0;
-	  double_quick_switch_counter = 0;
-	  long_switch_pressed = 0;
-	  prev_layer = current_layer;
+//	  // ################################################################################################
+//	  // calculating today's current time in seconds
+//	  downtime_seconds = HAL_GetTick()/1000;
+////	  today_time_in_sec = start_time_in_sec + downtime_seconds;
+//
+//	  if (downtime_seconds - downtime_seconds_prev_HELPER >= 1){
+//		  today_time_in_sec += 1;
+//		  downtime_seconds_prev_HELPER = downtime_seconds;
+//	  }
+//
+//	  if (today_time_in_sec > (86400)){
+//		  today_time_in_sec = get_current_time_in_sec_1(&hi2c1);
+//	  }
+//	  // ################################################################################################
+//
+//	  detect_switch_cases_v2();
+//
+//	  update_layer();
+//
+//	  if (downtime_seconds - auto_display_off_timer >= 10 && (!auto_display_off_FLAG && auto_display_off_ENABLE)){
+//		  auto_display_off_FLAG = true;
+//		  uint8_t nothing_digits[4] = {0, 0, 0, 0};
+//		  TM1637_WriteData(0xc0, nothing_digits, 4);
+//	  }
+//
+//	  if (current_layer == 0) {
+//		  if (!auto_display_off_ENABLE) auto_display_off_ENABLE = true;
+//		  display_current_time();
+//	  }
+//
+//	  else if (current_layer == 1) {
+//		  if (auto_display_off_ENABLE) auto_display_off_ENABLE = false;
+//		  show_function_selector();
+//	  }
+//
+//	  else if (current_layer == 2) {
+//		  // timer
+//		  if (current_function == 1){
+//			  timer_selector();
+//		  }
+//	  }
+//
+//	  else if (current_layer == 10){
+//		  start_timer(current_timer_option);
+//		  if (start_beep_beep_FLAG) timer_beep_beep();
+//	  }
+//
+//	  else if (current_layer == 15){
+//		  handle_stop_watch();
+//	  }
+//
+//
+//
+//	  // clear all switch cases
+//	  single_quick_switch_counter = 0;
+//	  double_quick_switch_counter = 0;
+//	  long_switch_pressed = 0;
+//	  prev_layer = current_layer;
 
 
     /* USER CODE END WHILE */
