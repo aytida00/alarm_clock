@@ -27,6 +27,8 @@
 #define ALPHABET_t 0x78
 #define ALPHABET_i 0x04
 #define ALPHABET_S 0x6d
+#define ALPHABET_n 0x54
+#define ALPHABET_E 0x79
 
 void start(void);
 

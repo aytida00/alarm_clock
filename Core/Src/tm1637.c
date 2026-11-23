@@ -176,6 +176,12 @@ void display_all_chars(char *all_chars){
 			case 'S':
 				data[i] = ALPHABET_S;
 				break;
+			case 'n':
+				data[i] = ALPHABET_n;
+				break;
+			case 'E':
+				data[i] = ALPHABET_E;
+				break;
 			default:
 				data[i] = 0x00;
 			}

@@ -26,7 +26,9 @@
 #include "ds1307.h"
 #include "ds3231.h"
 #include "speaker.h"
+#include "at24cxx.h"
 #include "stdbool.h"
+#include "string.h"
 
 /* USER CODE END Includes */
 
@@ -147,6 +149,7 @@ void update_layer(void);
 void show_function_selector(void);
 void timer_selector(void);
 void handle_stop_watch(void);
+void handle_alarm_setting(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -279,6 +282,10 @@ int main(void)
 
 	  else if (current_layer == 15){
 		  handle_stop_watch();
+	  }
+
+	  else if (current_layer == 20){
+		  handle_alarm_setting();
 	  }
 
 
@@ -667,6 +674,11 @@ void update_layer(void){
 			current_layer = 15;
 			auto_display_off_ENABLE = false;
 		}
+
+		else if (current_function == 0){
+			current_layer = 20;
+			auto_display_off_ENABLE = false;
+		}
 	}
 	else if (double_quick_switch_counter && (current_layer <= 2)){
 		current_layer -= 1;
@@ -760,6 +772,110 @@ void handle_stop_watch(void){
 		long_switch_pressed = 0;
 		stop_watch_layer = 0;
 		stop_watch_zero_display_FLAG = true;
+	}
+}
+
+void handle_alarm_setting(void){
+	bool run_loop = true;
+	uint8_t alarm_layer = 0;  // 0: all saved alarm can be scrolled by up and down, 1: set or notSet the selected alarm, 2: UI for setting alarm
+	int joy_comm;
+	int prev_joy_comm = JOY_IDLE;
+	int8_t alarm_number = 0;
+	bool is_alarm_enable = false; // alarm is disabled
+//	uint8_t display_numbers[4];
+	char display_characters[4];
+
+	// extract saved alarms from memory
+	uint8_t my_saved_alarms[4][5];
+	uint16_t memory_addr = 0x0000u;  // address for page1's first byte
+	for (uint8_t i = 0; i < 4; i++){
+		uint8_t rData[6] = {0,0,0,0,0,0};
+		if(at24_isConnected(&hi2c1)){
+		  	at24_read(&hi2c1, memory_addr, rData, 5, 100);
+		  	HAL_Delay(10);
+		}
+		// Copy 5 bytes from rData into row 'i' of my_saved_alarms
+		memcpy(my_saved_alarms[i], rData, 5);
+		memory_addr += 64;
+	}
+
+	while (run_loop){
+		detect_switch_cases_v2();
+		joy_comm = get_joystick_commands();
+
+		// upon selecting particular indexed alarm
+		if(alarm_layer == 0 && single_quick_switch_counter){
+			single_quick_switch_counter = 0;
+			alarm_layer = 1;
+			is_alarm_enable = my_saved_alarms[alarm_number][4];
+			if (is_alarm_enable){
+				display_characters[0] = 'S';
+				display_characters[1] = 'E';
+				display_characters[2] = 't';
+				display_characters[3] = ' ';
+			}
+			else{
+				display_characters[0] = 'n';
+				display_characters[1] = 'S';
+				display_characters[2] = 'E';
+				display_characters[3] = 't';
+			}
+			display_all_chars(display_characters);
+		}
+
+		if (alarm_layer == 1 && single_quick_switch_counter){
+			single_quick_switch_counter = 0;
+			if (!is_alarm_enable){
+				alarm_layer = 0;
+				uint8_t temp_enable = is_alarm_enable ? 1 : 0;
+			  	at24_write(&hi2c1, (memory_addr + alarm_number*64 + 4), &temp_enable, 1, 100);
+			  	HAL_Delay(10);
+			  	display_all_digits(my_saved_alarms[alarm_number]);
+			  	HAL_Delay(10);
+			}
+			else{
+				alarm_layer = 2;
+			}
+		}
+
+
+		if ((joy_comm != prev_joy_comm) && (joy_comm != JOY_IDLE)){
+			if (alarm_layer == 0){
+				if (joy_comm == JOY_U) alarm_number++;
+				else if (joy_comm == JOY_D) alarm_number--;
+				if (alarm_number > 3) alarm_number = 3;
+				if (alarm_number < 0) alarm_number = 0;
+
+				// display the current indexed alarm
+				display_all_digits(my_saved_alarms[alarm_number]);
+
+			}
+
+			else if (alarm_layer == 1){
+				if ((joy_comm == JOY_R) | (joy_comm == JOY_L)){
+					is_alarm_enable = !is_alarm_enable;
+					if (is_alarm_enable){
+						display_characters[0] = 'S';
+						display_characters[1] = 'E';
+						display_characters[2] = 't';
+						display_characters[3] = ' ';
+					}
+					else{
+						display_characters[0] = 'n';
+						display_characters[1] = 'S';
+						display_characters[2] = 'E';
+						display_characters[3] = 't';
+					}
+					display_all_chars(display_characters);
+				}
+			}
+		}
+
+
+
+
+
+		prev_joy_comm = joy_comm;
 	}
 }
 
@@ -875,26 +991,26 @@ int get_joystick_commands(void){
 
 	if (joystick_at_idle){
 		// U
-		if (value_adc[0] > 3500) {
-			joystick_at_idle = false;
-			return JOY_D;
-		}
-		// D
-		if (value_adc[0] < 500){
+		if (value_adc[1] > 3500) {
 			joystick_at_idle = false;
 			return JOY_U;
+		}
+		// D
+		if (value_adc[1] < 500){
+			joystick_at_idle = false;
+			return JOY_D;
 		}
 
 
 
 
 		// R
-		if (value_adc[1] > 3500) {
+		if (value_adc[0] > 3500) {
 			joystick_at_idle = false;
 			return JOY_R;
 		}
 		// L
-		if (value_adc[1] < 500){
+		if (value_adc[0] < 500){
 			joystick_at_idle = false;
 			return JOY_L;
 		}
