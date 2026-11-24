@@ -722,6 +722,7 @@ void update_layer(void){
 	// cancel the timer with long_switch press
 	else if (current_layer == 10 && long_switch_pressed && !start_beep_beep_FLAG){
 		current_layer = 0;
+		start_timer_FLAG = false;
 		auto_display_off_ENABLE = true;
 	}
 	// cancel the stop watch
