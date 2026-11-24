@@ -141,6 +141,7 @@ static void MX_TIM2_Init(void);
 
 void display_current_time();
 int get_joystick_commands(void);
+int get_joystick_commands_continuous(void);
 void display_stages(void);
 void start_timer(uint8_t otpion);
 void timer_beep_beep(void);
@@ -150,6 +151,7 @@ void show_function_selector(void);
 void timer_selector(void);
 void handle_stop_watch(void);
 void handle_alarm_setting(void);
+uint8_t* time_set_UI_HELPER(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -798,10 +800,20 @@ void handle_alarm_setting(void){
 		memcpy(my_saved_alarms[i], rData, 5);
 		memory_addr += 64;
 	}
+	memory_addr = 0x0000u; // reset
 
 	while (run_loop){
 		detect_switch_cases_v2();
 		joy_comm = get_joystick_commands();
+
+		if (alarm_layer == 0 && double_quick_switch_counter){
+			current_layer = 0;
+			auto_display_off_ENABLE = true;
+			run_loop = false;
+			// update the current time
+			today_time_in_sec = get_current_time_in_sec_1(&hi2c1);
+			break;
+		}
 
 		// upon selecting particular indexed alarm
 		if(alarm_layer == 0 && single_quick_switch_counter){
@@ -828,13 +840,26 @@ void handle_alarm_setting(void){
 			if (!is_alarm_enable){
 				alarm_layer = 0;
 				uint8_t temp_enable = is_alarm_enable ? 1 : 0;
-			  	at24_write(&hi2c1, (memory_addr + alarm_number*64 + 4), &temp_enable, 1, 100);
-			  	HAL_Delay(10);
+				if(at24_isConnected(&hi2c1)){
+					at24_write(&hi2c1, (memory_addr + alarm_number*64 + 4), &temp_enable, 1, 100);
+					HAL_Delay(10);
+				}
 			  	display_all_digits(my_saved_alarms[alarm_number]);
 			  	HAL_Delay(10);
+			  	// save the status
+			  	my_saved_alarms[alarm_number][4] = temp_enable;
 			}
 			else{
-				alarm_layer = 2;
+				uint8_t *alarm_time_HELPER = time_set_UI_HELPER();
+				memcpy(my_saved_alarms[alarm_number], alarm_time_HELPER, 4);
+				my_saved_alarms[alarm_number][4] = 1;
+				alarm_layer = 0;
+				// now save this set alarm to memory
+				if(at24_isConnected(&hi2c1)){
+					at24_write(&hi2c1, (memory_addr + alarm_number*64), my_saved_alarms[alarm_number], 5, 100);
+					HAL_Delay(10);
+				}
+
 			}
 		}
 
@@ -852,7 +877,7 @@ void handle_alarm_setting(void){
 			}
 
 			else if (alarm_layer == 1){
-				if ((joy_comm == JOY_R) | (joy_comm == JOY_L)){
+				if ((joy_comm == JOY_R) || (joy_comm == JOY_L)){
 					is_alarm_enable = !is_alarm_enable;
 					if (is_alarm_enable){
 						display_characters[0] = 'S';
@@ -877,6 +902,142 @@ void handle_alarm_setting(void){
 
 		prev_joy_comm = joy_comm;
 	}
+}
+
+uint8_t* time_set_UI_HELPER(void){
+	// first time display data means what time to show when this function is called
+	// I think it should be 00:00
+
+	int8_t hours = 0, minutes = 0;
+	static uint8_t display_numbers[4];  // made static for this local variable
+	uint8_t cursor_pointer = 0; // 0 means hours and 1 means minutes
+	bool show_time = true;
+	int joy_comm_;
+	int prev_joy_comm_ = JOY_IDLE;
+	uint32_t current_tick;
+	uint32_t prev_tick = 0;
+	bool enable_single_increment = false;
+	bool enable_fast_multiple_increment = false;
+	uint32_t counter_TICK_HELPER = 0, counter_TICK_HELPER_1 = 0;
+
+	// start to blink at two of the hour's digits
+	while(true){
+		current_tick = HAL_GetTick();
+		detect_switch_cases_v2();
+		joy_comm_ = get_joystick_commands_continuous();
+
+		// detect single switch press as final time and exit the loop
+		if (single_quick_switch_counter){
+			single_quick_switch_counter = 0;
+			break;
+		}
+
+		// for changing pointer
+		if (joy_comm_ != prev_joy_comm_ && (joy_comm_ != JOY_IDLE)){
+			if (joy_comm_ == JOY_R || (joy_comm_ == JOY_L)){
+				cursor_pointer = !cursor_pointer;
+			}
+		}
+
+		// detect quick vs long joy commands
+		if (joy_comm_ == JOY_U || joy_comm_ == JOY_D) {
+		    if (joy_comm_ != prev_joy_comm_) {
+		        enable_single_increment = true;
+		        enable_fast_multiple_increment = false;
+		        counter_TICK_HELPER = current_tick;
+		    } else if ((current_tick - counter_TICK_HELPER) > 800) {
+		        enable_fast_multiple_increment = true;
+		    }
+		} else {
+		    enable_fast_multiple_increment = false;
+		}
+
+		// now do action
+		if (enable_single_increment){
+			enable_single_increment = false;
+			if (cursor_pointer == 0){
+				if (joy_comm_ == JOY_U) hours += 1;
+				else if (joy_comm_ == JOY_D) hours -= 1;
+
+				// limiting the values
+				if (hours > 23) hours = 0;
+				else if (hours < 0) hours = 23;
+			}
+			else{
+				if (joy_comm_ == JOY_U) minutes += 1;
+				else if (joy_comm_ == JOY_D) minutes -= 1;
+
+				// limiting the values
+				if (minutes > 59) minutes = 0;
+				else if (minutes < 0) minutes = 59;
+			}
+		}
+
+		if (enable_fast_multiple_increment){
+			show_time = true;
+			if (current_tick - counter_TICK_HELPER_1 > 200){
+				counter_TICK_HELPER_1 = current_tick;
+
+				if (cursor_pointer == 0){
+					if (joy_comm_ == JOY_U) hours += 1;
+					else if (joy_comm_ == JOY_D) hours -= 1;
+
+					// limiting the values
+					if (hours > 23) hours = 0;
+					else if (hours < 0) hours = 23;
+				}
+				else{
+					if (joy_comm_ == JOY_U) minutes += 1;
+					else if (joy_comm_ == JOY_D) minutes -= 1;
+
+					// limiting the values
+					if (minutes > 59) minutes = 0;
+					else if (minutes < 0) minutes = 59;
+				}
+			}
+		}
+
+		// let's convert time to display data
+		display_numbers[0] = hours / 10;
+		display_numbers[1] = hours % 10;
+		display_numbers[2] = minutes / 10;
+		display_numbers[3] = minutes % 10;
+
+
+
+		// blink at current cursor point to
+		if (!show_time){
+			if (cursor_pointer == 0){
+				display_numbers[0] = 10; // means default which is no display
+				display_numbers[1] = 10;
+			}
+			else{
+				display_numbers[2] = 10;
+				display_numbers[3] = 10;
+			}
+		}
+		if (current_tick - prev_tick > 200){
+			show_time = !show_time;
+
+			// display the numbers
+			display_all_digits(display_numbers);
+			prev_tick = current_tick;
+		}
+
+
+
+
+		prev_joy_comm_ = joy_comm_;
+
+		HAL_Delay(10);
+	}
+
+	display_numbers[0] = hours / 10;
+	display_numbers[1] = hours % 10;
+	display_numbers[2] = minutes / 10;
+	display_numbers[3] = minutes % 10;
+
+	return display_numbers;
 }
 
 
@@ -965,7 +1126,7 @@ void timer_selector(void){
 void display_current_time(){
 	uint8_t current_hour = (uint8_t)(today_time_in_sec / 3600);
 	uint8_t current_minute = (uint8_t)((today_time_in_sec - current_hour*3600)/60);
-	uint8_t current_seconds = (uint8_t)(today_time_in_sec - current_hour*3600 - current_minute*60);
+//	uint8_t current_seconds = (uint8_t)(today_time_in_sec - current_hour*3600 - current_minute*60);
 
 
 	time_display_data[0] = (current_hour / 10);
@@ -1018,6 +1179,28 @@ int get_joystick_commands(void){
 
 	}
 	return 1000;  // just a random value other than [0:3]
+}
+
+int get_joystick_commands_continuous(void) {
+    static int current_state = JOY_IDLE;
+
+    // Return to IDLE once the stick is back in the center deadzone
+    if ((value_adc[0] > 1000 && value_adc[0] < 3000) &&
+        (value_adc[1] > 1000 && value_adc[1] < 3000)) {
+        current_state = JOY_IDLE;
+    }
+    // Update direction when pushed past the outer thresholds
+    else if (value_adc[1] > 3500) {
+        current_state = JOY_U;
+    } else if (value_adc[1] < 500) {
+        current_state = JOY_D;
+    } else if (value_adc[0] > 3500) {
+        current_state = JOY_R;
+    } else if (value_adc[0] < 500) {
+        current_state = JOY_L;
+    }
+
+    return current_state;
 }
 
 
