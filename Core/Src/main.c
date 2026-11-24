@@ -641,7 +641,6 @@ void detect_switch_cases_v2(void) {
             // It was a long press, and it has just been released
 //            LONG_SWITCH_BEEPED = false;  // Reset for next time
             long_switch_pressed = true;
-            small_beep_FLAG = false;
             // Optional safety: if user released between 1500ms and 1800ms, stop the beep early
             if (small_beep_FLAG) {
             	small_beep_FLAG = false;
@@ -689,6 +688,8 @@ void update_layer(void){
 		current_layer = 2;  // Entering to particular function
 		if (current_function == 2){
 			current_layer = 15;
+			stop_watch_layer = 0;
+			stop_watch_zero_display_FLAG = true;
 			auto_display_off_ENABLE = false;
 		}
 
