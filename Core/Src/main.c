@@ -94,6 +94,14 @@ int8_t prev_layer = 0; // just for displaying alarm function(that is 0th functio
 // layer: 1
 int prev_joy_command = JOY_IDLE;
 
+// lyaer: 2 --> TIMER
+uint32_t my_alarm_playlist[4];
+uint8_t total_enabled_alarms = 0;
+bool start_playing_alarm = false;
+bool compare_alarms = true;
+bool currently_alarm_playing = false;
+
+
 // layer: 2 --> TIMER
 int8_t current_timer_option = 0;
 bool stop_beep_beep_FLAG = false;
@@ -151,7 +159,10 @@ void show_function_selector(void);
 void timer_selector(void);
 void handle_stop_watch(void);
 void handle_alarm_setting(void);
-uint8_t* time_set_UI_HELPER(void);
+uint8_t* time_set_UI_HELPER(uint8_t* saved_alarmP);
+void update_alarm_playlist(void);
+void handle_alarm_playing(void);
+void alarm_loop(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -228,6 +239,8 @@ int main(void)
   // turn off built in led
   HAL_GPIO_WritePin(MY_LED_GPIO_Port, MY_LED_Pin, 1);
 
+  update_alarm_playlist();
+
 
   /* USER CODE END 2 */
 
@@ -243,6 +256,7 @@ int main(void)
 	  if (downtime_seconds - downtime_seconds_prev_HELPER >= 1){
 		  today_time_in_sec += 1;
 		  downtime_seconds_prev_HELPER = downtime_seconds;
+		  handle_alarm_playing();
 	  }
 
 	  if (today_time_in_sec > (86400)){
@@ -288,6 +302,7 @@ int main(void)
 
 	  else if (current_layer == 20){
 		  handle_alarm_setting();
+		  update_alarm_playlist();
 	  }
 
 
@@ -777,6 +792,148 @@ void handle_stop_watch(void){
 	}
 }
 
+
+
+void update_alarm_playlist(void){
+	// extract saved alarms from memory
+	uint16_t memory_addr = 0x0000u;  // address for page1's first byte
+	total_enabled_alarms = 0;
+	for (uint8_t i = 0; i < 4; i++){
+		uint8_t rData[6] = {0,0,0,0,0,0};
+		if(at24_isConnected(&hi2c1)){
+		  	at24_read(&hi2c1, memory_addr, rData, 5, 100);
+		  	HAL_Delay(10);
+
+			// only get alarm which are enabled
+		  	if (rData[4] == 1){
+		  		my_alarm_playlist[total_enabled_alarms] = (uint32_t)(rData[0]*10 + rData[1])*3600UL + (uint32_t)(rData[2]*10 + rData[3])*60UL;
+		  		total_enabled_alarms += 1;
+		  	}
+		}
+		memory_addr += 64;
+	}
+
+	// sort my_alarm_playlist in ascending order
+	for (uint8_t i = 1; i < total_enabled_alarms; i++){
+		uint32_t key = my_alarm_playlist[i];
+		int8_t j = i - 1;
+		while (j >= 0 && my_alarm_playlist[j] > key){
+			my_alarm_playlist[j + 1] = my_alarm_playlist[j];
+			j--;
+		}
+		my_alarm_playlist[j + 1] = key;
+	}
+}
+
+
+
+
+void handle_alarm_playing(void){
+	// my_alarm_playlist will sorted
+	for(uint8_t i=0; i < total_enabled_alarms; i++){
+		// compare it with saved alarms and trigger alarm if any match
+		if (my_alarm_playlist[i] == today_time_in_sec) {
+			alarm_loop(); // this is blocking function
+			today_time_in_sec = get_current_time_in_sec_1(&hi2c1);  // time update
+		}
+
+	}
+
+}
+
+// single_quick_switch means stops alarm and any joystick command for more than 2 second as snooze
+// when exiting loop update the today_time_in_sec
+void alarm_loop(void){
+	uint16_t alarm_tone[4] = {150, 100, 150, 800};  // play, stop, play, stop
+	uint8_t array_len = sizeof(alarm_tone)/sizeof(alarm_tone[0]);  // because size of returns total bytes
+	uint8_t current_index = 0; // index of alarm_tone array
+	uint32_t index_counter = 0;
+	int joy_comm__ = JOY_IDLE, prev_joy_comm__ = JOY_IDLE;
+	uint32_t alarm_start_time_ = today_time_in_sec;
+	uint32_t current_time_ = alarm_start_time_;
+	uint32_t current_tick;
+	uint32_t snooze_alarm_tick_helper1, snooze_alarm_helper2;
+	uint32_t alarm_helper1 = HAL_GetTick();
+	bool flag1 = true; // used to enter the if statement which plays or stops speaker
+
+	bool snooze_mode_enterd = false;
+
+	char display_data1[4] = {'A', 'A', 'A', 'A'};
+	char display_data2[4] = {'z', 'z', 'z', 'z'};
+
+	while(true){
+		current_tick = HAL_GetTick();
+		detect_switch_cases_v2();
+		joy_comm__ = get_joystick_commands_continuous();
+
+		// update the loop time in sec
+		current_time_ = current_tick/1000;
+
+
+		// stop the alarm
+		if (single_quick_switch_counter) {
+			single_quick_switch_counter = 0;
+			speaker_stop(&htim2);
+			HAL_Delay(20);
+			break;
+		}
+		// snooze the alarm
+		if (joy_comm__ != JOY_IDLE){
+			if (joy_comm__ != prev_joy_comm__){
+				snooze_alarm_tick_helper1 = current_tick;
+			}
+
+			// if more than 2 second than enter to snooze mode
+			if ((current_tick - snooze_alarm_tick_helper1 > 2000) && !snooze_mode_enterd){
+				snooze_mode_enterd = true;
+				snooze_alarm_helper2 = current_time_;  // will be used to compare 5 minutes for again trigger alarm
+				speaker_stop(&htim2);
+				HAL_Delay(20);
+				display_all_chars(display_data2);
+			}
+
+		}
+
+		// this is where alarm tone will be played
+		if (!snooze_mode_enterd){
+			if (flag1){
+				alarm_helper1 = current_tick;
+				flag1 = false;
+				if (current_index%2 == 0){
+					speaker_play(&htim2, 350);
+					display_all_chars(display_data1);
+				}
+				else{
+					speaker_stop(&htim2);
+					display_all_chars(display_data2);
+				}
+			}
+
+			// increment current_index
+			if(current_tick - alarm_helper1 >= alarm_tone[current_index]){
+				flag1 = true;
+				index_counter += 1;
+				current_index = index_counter % array_len;
+			}
+		}
+		else{
+			// 300 seconds = 5 minutes
+			if(current_time_ - snooze_alarm_helper2 >= 300){
+				snooze_mode_enterd = false;
+			}
+		}
+
+		prev_joy_comm__ = joy_comm__;
+	}
+
+	display_all_chars(display_data2);
+}
+
+
+
+
+
+
 void handle_alarm_setting(void){
 	bool run_loop = true;
 	uint8_t alarm_layer = 0;  // 0: all saved alarm can be scrolled by up and down, 1: set or notSet the selected alarm, 2: UI for setting alarm
@@ -788,7 +945,7 @@ void handle_alarm_setting(void){
 	char display_characters[4];
 
 	// extract saved alarms from memory
-	uint8_t my_saved_alarms[4][5];
+	static uint8_t my_saved_alarms[4][5];
 	uint16_t memory_addr = 0x0000u;  // address for page1's first byte
 	for (uint8_t i = 0; i < 4; i++){
 		uint8_t rData[6] = {0,0,0,0,0,0};
@@ -850,7 +1007,7 @@ void handle_alarm_setting(void){
 			  	my_saved_alarms[alarm_number][4] = temp_enable;
 			}
 			else{
-				uint8_t *alarm_time_HELPER = time_set_UI_HELPER();
+				uint8_t *alarm_time_HELPER = time_set_UI_HELPER(&my_saved_alarms[alarm_number][0]);
 				memcpy(my_saved_alarms[alarm_number], alarm_time_HELPER, 4);
 				my_saved_alarms[alarm_number][4] = 1;
 				alarm_layer = 0;
@@ -904,11 +1061,13 @@ void handle_alarm_setting(void){
 	}
 }
 
-uint8_t* time_set_UI_HELPER(void){
+uint8_t* time_set_UI_HELPER(uint8_t* saved_alarmP){
 	// first time display data means what time to show when this function is called
-	// I think it should be 00:00
-
-	int8_t hours = 0, minutes = 0;
+	// I think it should be saved alarm
+	uint8_t saved_alarm[4];
+	memcpy(saved_alarm, saved_alarmP, 4);
+	int8_t hours = saved_alarm[0]*10 + saved_alarm[1];
+	int8_t minutes = saved_alarm[2]*10 + saved_alarm[3];
 	static uint8_t display_numbers[4];  // made static for this local variable
 	uint8_t cursor_pointer = 0; // 0 means hours and 1 means minutes
 	bool show_time = true;
@@ -929,6 +1088,12 @@ uint8_t* time_set_UI_HELPER(void){
 		// detect single switch press as final time and exit the loop
 		if (single_quick_switch_counter){
 			single_quick_switch_counter = 0;
+			// so that it always shows correct set time
+			display_numbers[0] = hours / 10;
+			display_numbers[1] = hours % 10;
+			display_numbers[2] = minutes / 10;
+			display_numbers[3] = minutes % 10;
+			display_all_digits(display_numbers);
 			break;
 		}
 
